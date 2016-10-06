@@ -9,9 +9,8 @@
 (def debug?
   ^boolean js/goog.DEBUG)
 
-(defn init []
-  (when debug?
-    (enable-console-print!)))
+(when debug?
+  (enable-console-print!))
 
 (defn command [data & token]
   ;; maybe validate :command, :args present
@@ -58,90 +57,66 @@
            println)
   )
 
-(defn channels []
-  (atom {"onopen" (a/chan)
-         "onerror" (a/chan (a/dropping-buffer 10))
-         "onmessage" (a/chan 100) ;;notsureifwanttoblockconnection
-         "onclose" (a/chan)
-         "send" (a/chan 10)
-         "close" (a/chan)}))
-
-(defonce conn (channels))
-
-(defn listen [url {:keys [:constructor] :or {constructor js/WebSocket. }}]
-  "binds a js/websocket to a core-async channel event bus"
-  (let [websocket (constructor url)
-        webbus (a/chan)
-        event-bus (a/pub webbus first)
-        publish! #(a/put! webbus [%1 %2])
-        subscribe! #(a/sub event-bus %1 (get @conn %1))]
-    (doto websocket
-      (aset "binaryType" "arraybuffer") ;;notsureifrequired
-      (aset "onopen"    #(publish! "onopen" "open!"))
-      (aset "onerror"   #(publish! "onerror" %))
-      (aset "onmessage" #(publish! "onmessage" %))
-      (aset "onclose"   #(do (publish! "onclose" "closed!")
-                             (swap! conn dissoc "event-bus")
-                             (a/close! webbus))))
-    (a/sub event-bus "send" (get @conn "send"))
-    (a/sub event-bus "close" (get @conn "close"))
-    (go-loop []
-        (let [msg (a/<! (get @conn "send"))]
-          #(.send websocket %)
-          (recur)))
-    (go-loop []
-        (let [msg (a/<! (get @conn "close"))]
-          #(.close websocket %)))
-
-    (subscribe! "onopen")
-    (subscribe! "onerror")
-    (subscribe! "onmessage")
-    (subscribe! "onclose")
-    (swap! conn assoc "event-bus" event-bus)
-    websocket))
-
-(defn es []
-  (.-readyState (js/EventSource. "/" )))
+;; TODO: look into whether event listeners can be added to this
+(defn js-event-source [{:keys [url onmessage onerror onopen]}]
+  (let [src js/EventSource. url #js{:withCredentials true}]
+    (set! (.-onmessage src) onmessage)
+    (set! (.-onerror src) onerror)
+    (set! (.-onopen src) onopen)
+    src))
 
 ;; careful, chrome hides a 401 response so if you see a blankish request/response
 ;; try switching to firefox to see the 401 unauthorized response
-(defrecord EventSource [event-source url onmessage onerror onopen state]
+(defrecord EventSource [conf src url onmessage onerror onopen state constructor]
   component/Lifecycle
   (start [cmp]
-    (if (:event-source cmp)
+    (if (:src cmp)
       (do
         (println "already started stream")
         cmp)
       (do
         (println "starting event stream")
-        (let [src (js/EventSource. (:url cmp) #js{ :withCredentials true } )]
-          (set! (.-onmessage src) (:onmessage cmp))
-          (set! (.-onerror src) (fn [e] (reset! (:state cmp) :disruption)))
-          (set! (.-onopen src) (fn [e] (reset! (:state cmp) :ok)))
+        (let [{{:keys [:url :es/onmessage :es/onerror :es/onopen :es/constructor]
+               :or {:es/onmessage   js/console.log
+                    :es/onerror     js/console.log
+                    :es/onopen      js/console.log
+                    :es/constructor js-event-source}} :conf} cmp
+              src (constructor {:url url
+                                :onmessage onmessage
+                                :onerror (fn [e]
+                                           (reset! (:state cmp) :disruption)
+                                           (onerror e cmp))
+                                :onopen  (fn [e]
+                                           (reset! (:state cmp) :ok)
+                                           (apply onopen e cmp))})]
           (-> cmp
-              (assoc :event-source src)
-              (assoc :state (.-readyState src)))))))
+              (assoc :src src))))))
   (stop [cmp]
-    (if (:event-source cmp)
+    (if (:src cmp)
       (do
         (println "closing stream")
-        (.close (:event-source cmp))
-        (dissoc cmp :event-source))
+        (.close (:src cmp))
+        (dissoc cmp :src))
       (do
         (println "stream already closed")
         cmp))))
 
-(defn event-source [{:keys [url onmessage onerror onopen]}]
-  {:url url
-   :onmessage (fn [m] ())})
 
 (defrecord Client [conf event-source state]
   component/Lifecycle
   (start [cmp]
-    ;; (let [event-source-map ])
-    (-> cmp
-        ;; (assoc :event-source (component/start (map->EventSource event-source-map)))
-        (assoc :state (atom :before)))))
+    (let []
+      ;; this requires a few milliseconds because the
+      ;; start of the EventSource happens before this component
+      ;; the duration of a web request would be sufficient
+      ;; the result of the EventSource connection will be propagated here
+      ;; designed like this for a simple user interface
+      (add-watch (get-in cmp [:event-source :state])
+                 :client
+                 (fn [k r o n] ; n is new value
+                   (reset! (:state cmp) n)))
+      (-> cmp
+          (assoc :state (or state (atom :before)))))))
 
 (defn validate [conf]
   (let [url (:url conf)]
@@ -156,27 +131,24 @@
   (let [path (-> url .getPath remove-slash)]
     (.setPath url (str path "/" "events"))))
 
-(defn event-handler [message]
-  (.log js/console message))
-
-(defn add-event-handlers [conf]
+(defn add-events-path [conf]
   ;; conf wins on conflict
   (merge
-   {:es/url (add-path (:url conf) "events")
-    :es/onmessage #(event-handler %)
-    }
-   conf ))
+   {:es/url (add-path (:url conf) "events")}
+   conf))
 
 ;; copied from bones.http/build-system
 (defn build-system [sys conf]
-  ;; simplify the api even more by not requiring a system-map from the user
   {:pre [(instance? cljs.core/Atom sys)
          (cljs.core.associative? conf)]}
-  (swap! sys #(-> (apply component/system-map (reduce concat %)) ;; if already a system-map break apart and put back together
-                  (assoc :conf (add-event-handlers (validate conf)))
+  ;; simplify the api even more by not requiring a system-map from the user
+  ;; sys may or may not already be a system-map
+  ;; reduce-concat breaks it apart and puts it back together
+  (swap! sys #(-> (apply component/system-map (reduce concat %))
+                  (assoc :conf (add-events-path (validate conf)))
                   (assoc :event-source (component/using (map->EventSource {:state (atom :before)})
                                                         [:conf]))
-                  (assoc :client (component/using (map->Client {})
+                  (assoc :client (component/using (map->Client {:state (atom :before)})
                                                   [:conf :event-source])))))
 
 (defn start [sys]
