@@ -35,18 +35,52 @@
                         (derive :done :empty)))
 
 ;; shares same signature as client/js-event-source
+;; mimics a web request
 (defn bad-event-source [{:keys [url onmessage onerror onopen]}]
-  (go (a/<! (a/timeout 100 ))
+  (go (a/<! (a/timeout 100))
         (onerror 'error))
   {})
+
+(defn ok-event-source [{:keys [url onmessage onerror onopen]}]
+  (go (a/<! (a/timeout 100))
+      (onopen 'ok))
+  {})
+
+(defn msg-event-source [{:keys [url onmessage onerror onopen]}]
+  (go (a/<! (a/timeout 100))
+      (onmessage (new js/MessageEvent
+                      "msg"
+                      #js{:data (str {:a "message"})}))
+  {}))
 
 (def sys (atom {}))
 
 (deftest initial-state
+  (testing "client call onmessage function with clojure data"
+    (async done
+           (client/build-system sys {:url "url"
+                                     :es/onmessage (fn [msg]
+                                                     (is (= {:a "message"} msg))
+                                                     (done))
+                                     :es/constructor msg-event-source})
+           (client/start sys)
+           (let []
+             (is (= :before @(get-in @sys [:client :state]))))))
+  (testing "client starts at :before and proceeds to :ok when successfully connected"
+    (async done
+           (client/build-system sys {:url "url"
+                                     :es/onopen (fn [e]
+                                                   (is (= :ok
+                                                          @(get-in @sys [:client :state])))
+                                                   (done))
+                                     :es/constructor ok-event-source})
+           (client/start sys)
+           (let []
+             (is (= :before @(get-in @sys [:client :state]))))))
   (testing "client starts at :before and proceeds to :disruption onerror given a bad url"
     (async done
            (client/build-system sys {:url "url"
-                                     :es/onerror (fn [e cmp]
+                                     :es/onerror (fn [e]
                                                    (is (= :disruption
                                                           @(get-in @sys [:client :state])))
                                                    (done))
@@ -56,6 +90,101 @@
              (is (= :before @(get-in @sys [:client :state])))))))
 
 (deftest url-resolving
-  (let [url (goog.Uri.parse "http://localhost:8080/api/")]
-    (is (= "http://localhost:8080/api/events"
-           (.toString (:es/url (client/add-events-path {:url url})))))))
+  (testing "merging defaults"
+    (let []
+      (is (= "/api/login" (-> (client/validate {})
+                              :req/login-url
+                              .toString))))))
+
+(deftest login
+  (testing "response returned on channel"
+    (async done
+           (let [_ (client/build-system sys {:url "url"
+                                             :es/constructor ok-event-source
+                                             :req/post-fn (fn [url params] (go {:status 200}))})
+                 _ (client/start sys)
+                 c (get-in @sys [:client])
+                 response (client/stream c :response/login)]
+             ;; setup async assertion
+             (a/take! response
+                      (fn [res]
+                        (is (= {:channel :response/login, :response {:status 200}}
+                               res))
+                        (done)))
+             ;; action
+             (client/login c {:username "wat" :password "hi"})))))
+
+
+(deftest logout
+  (testing "response returned on channel"
+    (async done
+           (let [_ (client/build-system sys {:url "url"
+                                             :es/constructor ok-event-source
+                                             :req/get-fn (fn [url params] (go {:status 200}))})
+                 _ (client/start sys)
+                 c (get-in @sys [:client])
+                 response (client/stream c :response/logout)]
+             ;; setup async assertion
+             (a/take! response
+                      (fn [res]
+                        (is (= {:channel :response/logout, :response {:status 200}}
+                               res))
+                        (done)))
+             ;; action
+             (client/logout c )))))
+
+
+(deftest query
+  (testing "response returned on channel"
+    (async done
+           (let [_ (client/build-system sys {:url "url"
+                                             :es/constructor ok-event-source
+                                             :req/get-fn (fn [url params] (go {:status 200}))})
+                 _ (client/start sys)
+                 c (get-in @sys [:client])
+                 response (client/stream c :response/query)]
+             ;; setup async assertion
+             (a/take! response
+                      (fn [res]
+                        (is (= {:channel :response/query, :response {:status 200}}
+                               res))
+                        (done)))
+             ;; action
+             (client/query c {:q 'nothin})))))
+
+(deftest command
+  (testing "response returned on channel"
+    (async done
+           (let [_ (client/build-system sys {:url "url"
+                                             :es/constructor ok-event-source
+                                             :req/post-fn (fn [url params] (go {:status 200}))})
+                 _ (client/start sys)
+                 c (get-in @sys [:client])
+                 response (client/stream c :response/command)]
+             ;; setup async assertion
+             (a/take! response
+                      (fn [res]
+                        (is (= {:channel :response/command, :response {:status 200}}
+                               res))
+                        (done)))
+             ;; action
+             (client/command c :where {:city "saint paul" :state "mn"})))))
+
+(deftest event-stream
+  (testing "response returned on channel"
+    (async done
+           (let [
+                 _ (client/build-system sys {:url "url"
+                                             :es/onmessage nil
+                                             :es/constructor msg-event-source})
+                 _ (client/start sys)
+                 c (get-in @sys [:client])
+                 response (client/stream c :es/event)
+                 ]
+            (a/take! response
+                      (fn [res]
+                        (is (= {:channel :es/event, :response {:a "message"}}
+                               res))
+                        (done)))
+             ;; action - no acton here
+             ))))

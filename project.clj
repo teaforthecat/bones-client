@@ -1,6 +1,6 @@
 (defproject bones/client "0.1.0"
-  :description "FIXME: write this!"
-  :url "http://example.com/FIXME"
+  :description "cljs client for bones/http"
+  :url "https://github.com/teaforthecat/bones-client"
   :license {:name "Eclipse Public License"
             :url "http://www.eclipse.org/legal/epl-v10.html"}
 
@@ -18,7 +18,7 @@
                  ]
 
   :plugins [[lein-figwheel "0.5.4-7"]
-            [lein-doo "0.1.6"]
+            [lein-doo "0.1.7"]
             [lein-cljsbuild "1.1.3" :exclusions [[org.clojure/clojure]]]]
 
   :source-paths ["src"]
