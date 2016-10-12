@@ -49,7 +49,7 @@
 (defn msg-event-source [{:keys [url onmessage onerror onopen]}]
   (go (a/<! (a/timeout 100))
       (onmessage (new js/MessageEvent
-                      "msg"
+                      "message"
                       #js{:data (str {:a "message"})}))
   {}))
 
@@ -104,7 +104,7 @@
                                              :req/post-fn (fn [url params] (go {:status 200}))})
                  _ (client/start sys)
                  c (get-in @sys [:client])
-                 response (client/stream c :response/login)]
+                 response (client/stream c)]
              ;; setup async assertion
              (a/take! response
                       (fn [res]
@@ -123,7 +123,7 @@
                                              :req/get-fn (fn [url params] (go {:status 200}))})
                  _ (client/start sys)
                  c (get-in @sys [:client])
-                 response (client/stream c :response/logout)]
+                 response (client/stream c)]
              ;; setup async assertion
              (a/take! response
                       (fn [res]
@@ -142,7 +142,7 @@
                                              :req/get-fn (fn [url params] (go {:status 200}))})
                  _ (client/start sys)
                  c (get-in @sys [:client])
-                 response (client/stream c :response/query)]
+                 response (client/stream c)]
              ;; setup async assertion
              (a/take! response
                       (fn [res]
@@ -160,7 +160,7 @@
                                              :req/post-fn (fn [url params] (go {:status 200}))})
                  _ (client/start sys)
                  c (get-in @sys [:client])
-                 response (client/stream c :response/command)]
+                 response (client/stream c)]
              ;; setup async assertion
              (a/take! response
                       (fn [res]
@@ -179,11 +179,11 @@
                                              :es/constructor msg-event-source})
                  _ (client/start sys)
                  c (get-in @sys [:client])
-                 response (client/stream c :es/event)
+                 event (client/stream c)
                  ]
-            (a/take! response
+            (a/take! event
                       (fn [res]
-                        (is (= {:channel :es/event, :response {:a "message"}}
+                        (is (= {:channel :event/message, :event {:a "message"}}
                                res))
                         (done)))
              ;; action - no acton here

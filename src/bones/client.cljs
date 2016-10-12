@@ -34,7 +34,7 @@
 
 ;; careful, chrome hides a 401 response so if you see a blankish request/response
 ;; try switching to firefox to see the 401 unauthorized response
-(defrecord EventSource [conf src url onmessage onerror onopen state constructor]
+(defrecord EventSource [conf src url msg-ch onmessage onerror onopen state constructor]
   component/Lifecycle
   (start [cmp]
     (if (:src cmp)
@@ -46,12 +46,10 @@
               {:keys [:req/events-url :es/onmessage :es/onerror :es/onopen :es/constructor]
                 :or {onmessage   (if debug? js/console.log)
                      constructor js-event-source}} conf
-              msg-ch (a/chan)
               src (constructor {:url events-url
                                 :onmessage (fn [e]
-                                             ;; TODO: maybe coerce from schema or something
                                              (let [msg (read-string e.data)]
-                                               (a/put! msg-ch msg)
+                                               (a/put! msg-ch e)
                                                (if (fn? onmessage) (onmessage msg))))
                                 :onerror (fn [e]
                                            (reset! (:state cmp) :disruption)
@@ -117,7 +115,8 @@
   ;; reduce-concat breaks it apart and puts it back together
   (swap! sys #(-> (apply component/system-map (reduce concat %))
                   (assoc :conf (validate conf))
-                  (assoc :event-source (component/using (map->EventSource {:state (atom :before)})
+                  (assoc :event-source (component/using (map->EventSource {:state (atom :before)
+                                                                           :msg-ch (a/chan)})
                                                         [:conf]))
                   (assoc :client (component/using (map->Client {:state (atom :before)})
                                                   [:conf :event-source])))))
@@ -132,8 +131,9 @@
   (query [this params]))
 
 (defprotocol Stream
-  (stream [this channel])
-  (publish-response [this channel resp-chan]))
+  (stream [this])
+  (publish-response [this channel resp-chan])
+  (publish-events [this event-stream]))
 
 (def not-started
   "Client not started: use (client/start sys)")
@@ -143,22 +143,25 @@
 
 (defrecord Client [conf event-source state]
   Stream
-  (stream [cmp channel]
-    (if-not (:sub-chan cmp) (throw not-started))
-    (let [chan (a/chan)]
-      (a/sub (:sub-chan cmp) channel chan)
-      chan))
+  (stream [cmp]
+    (if-not (:pub-chan cmp) (throw not-started))
+    (:pub-chan cmp))
   (publish-response [{:keys [:pub-chan] :as cmp} channel resp-chan]
+    (go
+      (let [response (a/<! resp-chan)]
+        (a/>! pub-chan {:channel channel :response response})))
+    cmp)
+  (publish-events [{:keys [:pub-chan] :as cmp} msg-ch]
     (a/pipeline 1
                 pub-chan
-                (map #(assoc {:channel channel} :response %))
-                resp-chan)
+                (map (fn [e] {:channel (keyword (symbol "event" e.type))
+                              :event (read-string e.data)}))
+                msg-ch)
     cmp)
   Requests
   (login [cmp params]
     (if-not (:pub-chan cmp) (throw not-started))
-    (let [{{:keys [:req/login-url :req/post-fn :auth/token]} :conf} cmp
-          headers (if token (token-header token) {})]
+    (let [{{:keys [:req/login-url :req/post-fn]} :conf} cmp]
       (publish-response cmp
                         :response/login
                         (post-fn login-url params headers))
@@ -202,12 +205,8 @@
                  :client
                  (fn [k r o n] ; n is new value
                    (reset! (:state cmp) n)))
-
-      ;; (if [msg-ch (get-in cmp [:event-source :msg-ch])]
-      ;;   (publish-response cmp :es/event msg-ch))
       (-> cmp
           (assoc :pub-chan pub-chan)
-          (assoc :sub-chan (a/pub pub-chan :channel))
-          (publish-response :es/event msg-ch)
+          (publish-events msg-ch)
           (assoc :state (or state (atom :before)))))))
 

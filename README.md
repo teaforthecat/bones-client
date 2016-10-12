@@ -1,12 +1,38 @@
 # bones.client
 
-FIXME: Write a one-line description of your library/project.
+A Clojurescript library designed to make http requests to the a CQRS 
 
 ## Overview
 
-FIXME: Write a paragraph about the library/project and highlight its goals.
+The interface consists of two parts, configuration and a protocol.
 
-## Setup
+### Configuration
+The happy path is when a `bones.http` server is running and serving the static assets that
+include your cljs app, and the user/browser has already authenticated/logged in.
+If those three things are true `bones.client` will establish a SSE connection
+when the client is started.
+```clojure
+(require '[bones.client :as client])
+(def sys (atom {}))
+(client/build-system sys {})
+(client/start sys)
+(get-in @sys [:client :state]) ;;=> :ok
+```
+
+
+### Protocol
+
+```clojure
+(client/login (:client @sys) {:username "abc" :password "123"})
+(client/logout (:client @sys))
+(client/command (:client @sys) :who {:name "abc" :role "user"})
+(client/query (:client @sys) {:q {"abc" 123}})
+(client/stream (:client @sys)) ;; returns a core.async/chan
+;; => {:channel :response/login :response {:status 200 ...}}
+;; => {:channel :event/mmm :event {:what "whopper"}}
+```
+
+## Development
 
 To get an interactive development environment run:
 
