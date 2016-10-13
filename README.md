@@ -1,20 +1,21 @@
 # bones.client
 
-A Clojurescript library designed to make http requests to the a CQRS 
+A Clojurescript library designed to make http requests to a CQRS and SSE server.
+All responses and events are sent into a single core.async channel. 
 
 ## Overview
 
 The interface consists of two parts, configuration and a protocol.
 
 ### Configuration
-The happy path is when a `bones.http` server is running and serving the static assets that
-include your cljs app, and the user/browser has already authenticated/logged in.
-If those three things are true `bones.client` will establish a SSE connection
-when the client is started.
+
+Minimal configuration is required. The `bones.client` will establish a SSE connection
+when the client is started. It the client is not authenticated...tbd
+
 ```clojure
 (require '[bones.client :as client])
 (def sys (atom {}))
-(client/build-system sys {})
+(client/build-system sys {:url "/api"})
 (client/start sys)
 (get-in @sys [:client :state]) ;;=> :ok
 ```
@@ -22,15 +23,39 @@ when the client is started.
 
 ### Protocol
 
+These functions return the client, which isn't very interesting.
+
 ```clojure
 (client/login (:client @sys) {:username "abc" :password "123"})
 (client/logout (:client @sys))
 (client/command (:client @sys) :who {:name "abc" :role "user"})
 (client/query (:client @sys) {:q {"abc" 123}})
+```
+
+The responses are emitted on the stream:
+
+```clojure
 (client/stream (:client @sys)) ;; returns a core.async/chan
 ;; => {:channel :response/login :response {:status 200 ...}}
+;; => {:channel :response/logout :response {:status 200 ...}}
+;; => {:channel :response/command :response {:status 200 ...}}
+;; => {:channel :response/query :response {:status 200 ...}}
+```
+
+If the client received an event on the SSE connection such as:
+
+```
+event: mmm
+data: {:what "whopper"}
+```
+
+Then the stream would emit: 
+
+```clojure
+(client/stream (:client @sys)) ;; returns a core.async/chan
 ;; => {:channel :event/mmm :event {:what "whopper"}}
 ```
+
 
 ## Development
 
