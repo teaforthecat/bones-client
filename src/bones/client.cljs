@@ -128,11 +128,13 @@
   (login [this params])
   (logout [this])
   (command [this command args])
-  (query [this params]))
+  (command [this command args tap])
+  (query [this params])
+  (query [this params tap]))
 
 (defprotocol Stream
   (stream [this])
-  (publish-response [this channel resp-chan])
+  (publish-response [this channel resp-chan tap])
   (publish-events [this event-stream]))
 
 (def not-started
@@ -146,10 +148,12 @@
   (stream [cmp]
     (if-not (:pub-chan cmp) (throw not-started))
     (:pub-chan cmp))
-  (publish-response [{:keys [:pub-chan] :as cmp} channel resp-chan]
+  (publish-response [{:keys [:pub-chan] :as cmp} channel resp-chan tap]
     (go
       (let [response (a/<! resp-chan)]
-        (a/>! pub-chan {:channel channel :response response})))
+        (a/>! pub-chan {:channel channel
+                        :response response
+                        :tap tap})))
     cmp)
   (publish-events [{:keys [:pub-chan] :as cmp} msg-ch]
     (a/pipeline 1
@@ -164,7 +168,8 @@
     (let [{{:keys [:req/login-url :req/post-fn]} :conf} cmp]
       (publish-response cmp
                         :response/login
-                        (post-fn login-url params headers))
+                        (post-fn login-url params headers)
+                        nil)
       cmp))
   (logout [cmp]
     ;; makes a request in order to let the browser manage cors cookies
@@ -173,34 +178,39 @@
           headers (if token (token-header token) {})]
       (publish-response cmp
                         :response/logout
-                        (get-fn logout-url {} headers))
+                        (get-fn logout-url {} headers)
+                        nil)
       cmp))
-  (query [cmp params]
+  (query [cmp params tap]
+    (query cmp params {}))
+  (query [cmp params tap]
     (if-not (:pub-chan cmp) (throw not-started))
     (let [{{:keys [:req/query-url :req/get-fn :auth/token]} :conf} cmp
           headers (if token (token-header token) {})]
       (publish-response cmp
                         :response/query
-                        (get-fn query-url params headers))
+                        (get-fn query-url params headers)
+                        tap)
       cmp))
   (command [cmp command args]
+    (command cmp command args {}))
+  (command [cmp command args tap]
     (if-not (:pub-chan cmp) (throw not-started))
     (let [{{:keys [:req/command-url :req/post-fn :auth/token]} :conf} cmp
           headers (if token (token-header token) {})
           params {:command command :args args}]
       (publish-response cmp
                         :response/command
-                        (post-fn command-url params headers))
+                        (post-fn command-url params headers)
+                        tap)
       cmp))
   component/Lifecycle
   (start [cmp]
     (let [pub-chan (a/chan 1)
           {{:keys [:state :msg-ch]} :event-source} cmp]
-      ;; this requires a few milliseconds because the
-      ;; start of the EventSource happens before this component
-      ;; the duration of a web request would be sufficient
-      ;; the result of the EventSource connection will be propagated here
-      ;; designed like this for a simple user interface
+      ;; When the state of the event source changes, it will be propagated here.
+      ;; This way the user can be concerned with only the client, instead of the
+      ;; client and the event source.
       (add-watch state
                  :client
                  (fn [k r o n] ; n is new value

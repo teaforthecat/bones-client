@@ -108,7 +108,9 @@
              ;; setup async assertion
              (a/take! response
                       (fn [res]
-                        (is (= {:channel :response/login, :response {:status 200}}
+                        (is (= {:channel :response/login
+                                :response {:status 200}
+                                :tap nil}
                                res))
                         (done)))
              ;; action
@@ -127,7 +129,9 @@
              ;; setup async assertion
              (a/take! response
                       (fn [res]
-                        (is (= {:channel :response/logout, :response {:status 200}}
+                        (is (= {:channel :response/logout
+                                :response {:status 200}
+                                :tap nil}
                                res))
                         (done)))
              ;; action
@@ -146,7 +150,9 @@
              ;; setup async assertion
              (a/take! response
                       (fn [res]
-                        (is (= {:channel :response/query, :response {:status 200}}
+                        (is (= {:channel :response/query
+                                :response {:status 200}
+                                :tap nil}
                                res))
                         (done)))
              ;; action
@@ -164,7 +170,9 @@
              ;; setup async assertion
              (a/take! response
                       (fn [res]
-                        (is (= {:channel :response/command, :response {:status 200}}
+                        (is (= {:channel :response/command
+                                :response {:status 200}
+                                :tap nil}
                                res))
                         (done)))
              ;; action
