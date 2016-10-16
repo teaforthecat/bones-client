@@ -21,6 +21,8 @@
             [lein-doo "0.1.7"]
             [lein-cljsbuild "1.1.3" :exclusions [[org.clojure/clojure]]]]
 
+  ;; this setting outputs: [doo] Command to run script
+  :doo {:debug true}
   :source-paths ["src"]
 
   :clean-targets ^{:protect false} ["resources/public/js/compiled" "target"]

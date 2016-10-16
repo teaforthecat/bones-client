@@ -10,7 +10,7 @@ The interface consists of two parts, configuration and a protocol.
 ### Configuration
 
 Minimal configuration is required. The `bones.client` will establish a SSE connection
-when the client is started. It the client is not authenticated the
+when the client is started. If the client is not authenticated the
 client will have to be started again upon login. 
 
 ```clojure

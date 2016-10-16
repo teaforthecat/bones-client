@@ -24,7 +24,6 @@
              :headers headers}]
     (http/get url req)))
 
-;; TODO: look into whether event listeners can be added to this
 (defn js-event-source [{:keys [url onmessage onerror onopen]}]
   (let [src (js/EventSource. url #js{:withCredentials true})]
     (set! (.-onmessage src) onmessage)
@@ -34,7 +33,7 @@
 
 ;; careful, chrome hides a 401 response so if you see a blankish request/response
 ;; try switching to firefox to see the 401 unauthorized response
-(defrecord EventSource [conf src url msg-ch onmessage onerror onopen state constructor]
+(defrecord EventSource [conf src url msg-ch onmessage onerror onopen es-state constructor]
   component/Lifecycle
   (start [cmp]
     (if (:src cmp)
@@ -52,13 +51,12 @@
                                                (a/put! msg-ch e)
                                                (if (fn? onmessage) (onmessage msg))))
                                 :onerror (fn [e]
-                                           (reset! (:state cmp) :disruption)
+                                           (reset! es-state :disruption)
                                            (if (fn? onerror) (onerror e)))
                                 :onopen  (fn [e]
-                                           (reset! (:state cmp) :ok)
+                                           (reset! es-state :ok)
                                            (if (fn? onopen) (onopen e)))})]
           (-> cmp
-              (assoc :msg-ch msg-ch)
               (assoc :src src))))))
   (stop [cmp]
     (if (:src cmp)
@@ -106,31 +104,15 @@
         (assoc :req/get-fn get-fn)
         (assoc :url url))))
 
-;; copied from bones.http/build-system
-(defn build-system [sys conf]
-  {:pre [(instance? cljs.core/Atom sys)
-         (cljs.core.associative? conf)]}
-  ;; simplify the api even more by not requiring a system-map from the user
-  ;; sys may or may not already be a system-map
-  ;; reduce-concat breaks it apart and puts it back together
-  (swap! sys #(-> (apply component/system-map (reduce concat %))
-                  (assoc :conf (validate conf))
-                  (assoc :event-source (component/using (map->EventSource {:state (atom :before)
-                                                                           :msg-ch (a/chan)})
-                                                        [:conf]))
-                  (assoc :client (component/using (map->Client {:state (atom :before)})
-                                                  [:conf :event-source])))))
-
-(defn start [sys]
-  (swap! sys component/start-system))
-
 (defprotocol Requests
-  (login [this params])
-  (logout [this])
-  (command [this command args])
-  (command [this command args tap])
-  (query [this params])
-  (query [this params tap]))
+  (login [this params]
+         [this params tap])
+  (logout [this]
+          [this tap])
+  (command [this command-name args]
+           [this command-name args tap])
+  (query [this params]
+         [this params tap]))
 
 (defprotocol Stream
   (stream [this])
@@ -143,7 +125,7 @@
 (defn token-header [token]
   {"authorization" (str "Token " token)})
 
-(defrecord Client [conf event-source state]
+(defrecord Client [conf event-source pub-chan client-state]
   Stream
   (stream [cmp]
     (if-not (:pub-chan cmp) (throw not-started))
@@ -164,14 +146,18 @@
     cmp)
   Requests
   (login [cmp params]
+    (login cmp params {}))
+  (login [cmp params tap]
     (if-not (:pub-chan cmp) (throw not-started))
     (let [{{:keys [:req/login-url :req/post-fn]} :conf} cmp]
       (publish-response cmp
                         :response/login
-                        (post-fn login-url params headers)
-                        nil)
+                        (post-fn login-url params)
+                        tap)
       cmp))
   (logout [cmp]
+    (logout cmp {}))
+  (logout [cmp tap]
     ;; makes a request in order to let the browser manage cors cookies
     (if-not (:pub-chan cmp) (throw not-started))
     (let [{{:keys [:req/logout-url :req/get-fn :auth/token]} :conf} cmp
@@ -179,9 +165,9 @@
       (publish-response cmp
                         :response/logout
                         (get-fn logout-url {} headers)
-                        nil)
+                        tap)
       cmp))
-  (query [cmp params tap]
+  (query [cmp params]
     (query cmp params {}))
   (query [cmp params tap]
     (if-not (:pub-chan cmp) (throw not-started))
@@ -192,13 +178,13 @@
                         (get-fn query-url params headers)
                         tap)
       cmp))
-  (command [cmp command args]
-    (command cmp command args {}))
-  (command [cmp command args tap]
+  (command [cmp command-name args]
+    (command cmp command-name args {}))
+  (command [cmp command-name args tap]
     (if-not (:pub-chan cmp) (throw not-started))
     (let [{{:keys [:req/command-url :req/post-fn :auth/token]} :conf} cmp
           headers (if token (token-header token) {})
-          params {:command command :args args}]
+          params {:command command-name :args args}]
       (publish-response cmp
                         :response/command
                         (post-fn command-url params headers)
@@ -206,17 +192,36 @@
       cmp))
   component/Lifecycle
   (start [cmp]
-    (let [pub-chan (a/chan 1)
-          {{:keys [:state :msg-ch]} :event-source} cmp]
+    (let [{{:keys [:es-state :msg-ch]} :event-source} cmp]
       ;; When the state of the event source changes, it will be propagated here.
       ;; This way the user can be concerned with only the client, instead of the
       ;; client and the event source.
-      (add-watch state
-                 :client
-                 (fn [k r o n] ; n is new value
-                   (reset! (:state cmp) n)))
+      (if es-state
+        (do
+          ;; in case multiple watchers(?)
+          (remove-watch es-state :client)
+          (add-watch es-state
+                     :client
+                     (fn [k r o n] ; n is new value
+                       (reset! client-state n)))))
       (-> cmp
-          (assoc :pub-chan pub-chan)
-          (publish-events msg-ch)
-          (assoc :state (or state (atom :before)))))))
+          (publish-events msg-ch)))))
 
+;; copied from bones.http/build-system
+(defn build-system [sys conf]
+  {:pre [(instance? cljs.core/Atom sys)
+         (cljs.core.associative? conf)]}
+  ;; simplify the api even more by not requiring a system-map from the user
+  ;; sys may or may not already be a system-map
+  ;; reduce-concat breaks it apart and puts it back together
+  (swap! sys #(-> (apply component/system-map (reduce concat %))
+                  (assoc :conf (validate conf))
+                  (assoc :event-source (component/using (map->EventSource {:es-state (atom :before)
+                                                                           :msg-ch (a/chan)})
+                                                        [:conf]))
+                  (assoc :client (component/using (map->Client {:client-state (atom :before)
+                                                                :pub-chan (a/chan)})
+                                                  [:conf :event-source])))))
+
+(defn start [sys]
+  (swap! sys component/start-system))

@@ -65,29 +65,29 @@
                                      :es/constructor msg-event-source})
            (client/start sys)
            (let []
-             (is (= :before @(get-in @sys [:client :state]))))))
+             (is (= :before @(get-in @sys [:client :client-state]))))))
   (testing "client starts at :before and proceeds to :ok when successfully connected"
     (async done
            (client/build-system sys {:url "url"
                                      :es/onopen (fn [e]
                                                    (is (= :ok
-                                                          @(get-in @sys [:client :state])))
+                                                          @(get-in @sys [:client :client-state])))
                                                    (done))
                                      :es/constructor ok-event-source})
            (client/start sys)
            (let []
-             (is (= :before @(get-in @sys [:client :state]))))))
+             (is (= :before @(get-in @sys [:client :client-state]))))))
   (testing "client starts at :before and proceeds to :disruption onerror given a bad url"
     (async done
            (client/build-system sys {:url "url"
                                      :es/onerror (fn [e]
                                                    (is (= :disruption
-                                                          @(get-in @sys [:client :state])))
+                                                          @(get-in @sys [:client :client-state])))
                                                    (done))
                                      :es/constructor bad-event-source})
            (client/start sys)
            (let []
-             (is (= :before @(get-in @sys [:client :state])))))))
+             (is (= :before @(get-in @sys [:client :client-state])))))))
 
 (deftest url-resolving
   (testing "merging defaults"
@@ -110,7 +110,7 @@
                       (fn [res]
                         (is (= {:channel :response/login
                                 :response {:status 200}
-                                :tap nil}
+                                :tap {}}
                                res))
                         (done)))
              ;; action
@@ -131,7 +131,7 @@
                       (fn [res]
                         (is (= {:channel :response/logout
                                 :response {:status 200}
-                                :tap nil}
+                                :tap {}}
                                res))
                         (done)))
              ;; action
@@ -152,7 +152,7 @@
                       (fn [res]
                         (is (= {:channel :response/query
                                 :response {:status 200}
-                                :tap nil}
+                                :tap {}}
                                res))
                         (done)))
              ;; action
@@ -172,7 +172,7 @@
                       (fn [res]
                         (is (= {:channel :response/command
                                 :response {:status 200}
-                                :tap nil}
+                                :tap {}}
                                res))
                         (done)))
              ;; action
