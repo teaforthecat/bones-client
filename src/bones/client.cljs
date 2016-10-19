@@ -13,16 +13,22 @@
   (enable-console-print!))
 
 ;; returns a channel
-(defn post [url params & headers]
-  (let [req {:edn-params params
-             :headers headers}]
-    (http/post url req)))
+(defn post
+  ([url params]
+   (post url params {}))
+  ([url params headers]
+   (let [req {:edn-params params
+              :headers headers}]
+     (http/post url req))))
 
 ;; returns a channel
-(defn get-req [url params & headers]
-  (let [req {:query-params params
-             :headers headers}]
-    (http/get url req)))
+(defn get-req
+  ([url params]
+   (get-req url params {}))
+  ([url params headers]
+   (let [req {:query-params params
+              :headers headers}]
+     (http/get url req))))
 
 (defn js-event-source [{:keys [url onmessage onerror onopen]}]
   (let [src (js/EventSource. url #js{:withCredentials true})]
@@ -63,7 +69,8 @@
       (do
         (println "closing stream")
         (.close (:src cmp))
-        (dissoc cmp :src))
+        (reset! es-state :done)
+        (assoc cmp :src nil))
       (do
         (println "stream already closed")
         cmp))))
@@ -225,3 +232,6 @@
 
 (defn start [sys]
   (swap! sys component/start-system))
+
+(defn stop [sys]
+  (swap! sys component/stop-system))
