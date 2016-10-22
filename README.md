@@ -1,7 +1,8 @@
 # bones.client
 
-A Clojurescript library designed to make http requests to a CQRS and SSE server.
-All responses and events are sent into a single core.async channel. 
+A Clojurescript library designed to make http requests to a CQRS and SSE server
+(like [bones.http](https://github.com/teaforthecat/bones-http)).
+All responses and events are put onto a single core.async channel. 
 
 ## Overview
 
@@ -46,7 +47,6 @@ The responses are emitted on the stream:
 If the client received an event on the SSE connection such as:
 
 ```
-event: mmm
 data: {:what "whopper"}
 ```
 
@@ -54,9 +54,10 @@ Then the stream would emit:
 
 ```clojure
 (client/stream (:client @sys)) ;; returns a core.async/chan
-;; => {:channel :event/mmm :event {:what "whopper"}}
+;; => {:channel :event/message :event {:what "whopper"}}
 ```
 
+_named events not yet supported_
 
 ## Development
 
@@ -83,6 +84,11 @@ To create a production build run:
 
 And open your browser in `resources/public/index.html`. You will not
 get live reloading, nor a REPL. 
+
+
+## Tests
+
+    lein doo phantom test
 
 ## License
 

@@ -9,7 +9,6 @@
   :dependencies [
                  [org.clojure/clojure "1.8.0"]
                  [org.clojure/clojurescript "1.9.229"]
-                 ;; [org.clojure/clojurescript "1.8.51"]
                  [org.clojure/core.async "0.2.385"
                   :exclusions [org.clojure/tools.reader]]
                  [com.stuartsierra/component "0.3.1"]
@@ -34,9 +33,7 @@
                 ;; the presence of a :figwheel configuration here
                 ;; will cause figwheel to inject the figwheel client
                 ;; into your build
-                ;; something needs to be here
                 :figwheel {}
-                ;; :figwheel {:on-jsload "bones.client/init"}
 
                 :compiler {:main bones.client
                            :asset-path "js/compiled/out"
