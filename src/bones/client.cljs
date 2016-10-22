@@ -53,13 +53,17 @@
                      constructor js-event-source}} conf
               src (constructor {:url events-url
                                 :onmessage (fn [e]
-                                             (let [msg (read-string e.data)]
-                                               (a/put! msg-ch e)
-                                               (if (fn? onmessage) (onmessage msg))))
+                                             (a/put! msg-ch e)
+                                             (if (fn? onmessage)
+                                                 (let [msg (read-string (.-data e))]
+                                                   (onmessage msg))))
                                 :onerror (fn [e]
                                            (reset! es-state :disruption)
                                            (if (fn? onerror) (onerror e)))
                                 :onopen  (fn [e]
+                                           (a/put! msg-ch (new js/MessageEvent
+                                                               "client-status"
+                                                               #js{:data (str {:bones/logged-in? true})}))
                                            (reset! es-state :ok)
                                            (if (fn? onopen) (onopen e)))})]
           (-> cmp
@@ -145,12 +149,16 @@
                         :tap tap})))
     cmp)
   (publish-events [{:keys [:pub-chan] :as cmp} msg-ch]
-    (a/pipeline 1
-                pub-chan
-                (map (fn [e] {:channel (keyword (symbol "event" e.type))
-                              :event (read-string e.data)}))
-                msg-ch)
-    cmp)
+    (if-not (:pipeline cmp)
+      (assoc cmp :pipeline
+             (a/pipeline 1
+                         pub-chan
+                         (map (fn [e] {:channel (keyword (symbol "event" e.type))
+                                       :event (read-string e.data)}))
+                         msg-ch))
+      (do (println "already publishing events")
+          cmp)))
+
   Requests
   (login [cmp params]
     (login cmp params {}))
@@ -197,8 +205,10 @@
                         (post-fn command-url params headers)
                         tap)
       cmp))
+
   component/Lifecycle
   (start [cmp]
+    (if-not (:event-source cmp) (throw "event-source missing from Client"))
     (let [{{:keys [:es-state :msg-ch]} :event-source} cmp]
       ;; When the state of the event source changes, it will be propagated here.
       ;; This way the user can be concerned with only the client, instead of the
