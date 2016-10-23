@@ -127,6 +127,7 @@
 
 (defprotocol Stream
   (stream [this])
+  (stream-loop [this func])
   (publish-response [this channel resp-chan tap])
   (publish-events [this event-stream]))
 
@@ -141,6 +142,23 @@
   (stream [cmp]
     (if-not (:pub-chan cmp) (throw not-started))
     (:pub-chan cmp))
+  (stream-loop [cmp stream-handler]
+    ; this lets a function handle the streaming messages, formatted as list,
+    ; perfect for re-frame
+    (let [s (stream cmp)]
+      (assoc cmp :stream-loop
+             (go-loop []
+               (let [revent (a/<! s)
+                     body (or (get-in revent [:response :body])
+                              (:event revent))]
+                 (stream-handler [(:channel revent)
+                        ;; No body is OK sometimes. Logout, for example, only
+                        ;; needs a header but the response(event) may be
+                        ;; useful, use schema/spec after this point
+                        body
+                        (get-in revent [:response :status])
+                        (:tap revent)]))
+               (recur)))))
   (publish-response [{:keys [:pub-chan] :as cmp} channel resp-chan tap]
     (go
       (let [response (a/<! resp-chan)]
@@ -221,8 +239,12 @@
                      :client
                      (fn [k r o n] ; n is new value
                        (reset! client-state n)))))
-      (-> cmp
-          (publish-events msg-ch)))))
+      (let [stream-handler (get-in cmp [:conf :stream-handler])
+            cmps (if stream-handler
+                   (stream-loop cmp stream-handler)
+                   cmp)]
+        (-> cmps
+            (publish-events msg-ch))))))
 
 ;; copied from bones.http/build-system
 (defn build-system [sys conf]

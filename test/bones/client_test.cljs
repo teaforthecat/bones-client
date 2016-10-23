@@ -196,3 +196,17 @@
                         (done)))
              ;; action - no acton here
              ))))
+
+(deftest stream-handler
+  (testing "is sent an event as list"
+    (async done
+           (let [stream-test (fn [e]
+                               (is (= [:event/message {:a "message"} nil nil]
+                                      e))
+                               (done))]
+             (client/build-system sys {:url "url"
+                                       :stream-handler stream-test
+                                       :es/onmessage nil
+                                       :es/constructor msg-event-source})
+             (client/start sys)
+             ))))
