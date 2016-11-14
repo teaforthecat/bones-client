@@ -30,6 +30,13 @@
               :headers headers}]
      (http/get url req))))
 
+(defn js-websocket [{:keys [url onmessage onerror onopen]}]
+  (let [src (js/WebSocket. url)]
+    (set! (.-onmessage src) onmessage)
+    (set! (.-onerror src) onerror)
+    (set! (.-onopen src) onopen)
+    src))
+
 (defn js-event-source [{:keys [url onmessage onerror onopen]}]
   (let [src (js/EventSource. url #js{:withCredentials true})]
     (set! (.-onmessage src) onmessage)
@@ -48,21 +55,29 @@
         cmp)
       (do
         (let [conf (:conf cmp)
-              {:keys [:req/events-url :es/onmessage :es/onerror :es/onopen :es/constructor]
-                :or {onmessage   (if debug? js/console.log)
-                     constructor js-event-source}} conf
-              src (constructor {:url events-url
+              {:keys [:req/events-url :req/websocket-url :es/connection-type
+                      :es/onmessage :es/onerror :es/onopen :es/constructor]
+               :or {onmessage (if debug? js/console.log)
+                    connection-type :event-source
+                    constructor (if (= connection-type :websocket)
+                                  js-websocket
+                                  js-event-source)}} conf
+              ;; maybe declare websocket instead of infer it
+              src (constructor {:url (if (= connection-type :websocket)
+                                       websocket-url
+                                       events-url)
                                 :onmessage (fn [e]
                                              (a/put! msg-ch e)
                                              (if (fn? onmessage)
-                                                 (let [msg (read-string (.-data e))]
-                                                   (onmessage msg))))
+                                               (let [msg (read-string (.-data e))]
+                                                 (onmessage msg))))
                                 :onerror (fn [e]
                                            (reset! es-state :disruption)
                                            (if (fn? onerror) (onerror e)))
                                 :onopen  (fn [e]
                                            (a/put! msg-ch (new js/MessageEvent
                                                                "client-status"
+                                                               ;; this data acts like a message from SSE or websocket
                                                                #js{:data (str {:bones/logged-in? true})}))
                                            (reset! es-state :ok)
                                            (if (fn? onopen) (onopen e)))})]
@@ -88,13 +103,18 @@
   (let [path (-> url .getPath remove-slash)]
     (.setPath (.clone url) (str path "/" part))))
 
-(defn validate [conf]
+(defn add-ws-scheme [url]
+  (let [scheme (if (= (.getScheme url) "https") "wss" "ws")]
+    (.setScheme (.clone url) scheme)))
+
+(defn conform [conf]
   (let [url (goog.Uri.parse (get conf :url "/api"))
         {:keys [:req/login-url
                 :req/logout-url
                 :req/command-url
                 :req/query-url
                 :req/events-url
+                :req/websocket-url
                 :req/post-fn
                 :req/get-fn]
          :or {login-url   (add-path url "login")
@@ -102,6 +122,7 @@
               command-url (add-path url "command")
               query-url   (add-path url "query")
               events-url  (add-path url "events")
+              websocket-url (add-ws-scheme (add-path url "ws"))
               post-fn     post
               get-fn      get-req
               }} conf]
@@ -111,6 +132,7 @@
         (assoc :req/command-url command-url)
         (assoc :req/query-url query-url)
         (assoc :req/events-url events-url)
+        (assoc :req/websocket-url websocket-url)
         (assoc :req/post-fn post-fn)
         (assoc :req/get-fn get-fn)
         (assoc :url url))))
@@ -254,7 +276,7 @@
   ;; sys may or may not already be a system-map
   ;; reduce-concat breaks it apart and puts it back together
   (swap! sys #(-> (apply component/system-map (reduce concat %))
-                  (assoc :conf (validate conf))
+                  (assoc :conf (conform conf))
                   (assoc :event-source (component/using (map->EventSource {:es-state (atom :before)
                                                                            :msg-ch (a/chan)})
                                                         [:conf]))
