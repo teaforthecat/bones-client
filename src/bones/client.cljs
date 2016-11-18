@@ -31,7 +31,8 @@
      (http/get url req))))
 
 (defn js-websocket [{:keys [url onmessage onerror onopen]}]
-  (let [src (js/WebSocket. url)]
+  ;; react-native wants a string, so, it gets a string
+  (let [src (js/WebSocket. (str url))]
     (set! (.-onmessage src) onmessage)
     (set! (.-onerror src) onerror)
     (set! (.-onopen src) onopen)
