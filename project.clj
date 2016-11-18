@@ -1,4 +1,4 @@
-(defproject bones/client "0.2.1"
+(defproject bones/client "0.2.2"
   :description "cljs client for bones/http"
   :url "https://github.com/teaforthecat/bones-client"
   :license {:name "Eclipse Public License"
