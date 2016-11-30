@@ -92,7 +92,7 @@
 (deftest url-resolving
   (testing "merging defaults"
     (let []
-      (is (= "/api/login" (-> (client/validate {})
+      (is (= "/api/login" (-> (client/conform {})
                               :req/login-url
                               .toString))))))
 

@@ -117,7 +117,8 @@
                 :req/events-url
                 :req/websocket-url
                 :req/post-fn
-                :req/get-fn]
+                :req/get-fn
+                :stream-handler]
          :or {login-url   (add-path url "login")
               logout-url  (add-path url "logout")
               command-url (add-path url "command")
@@ -126,6 +127,7 @@
               websocket-url (add-ws-scheme (add-path url "ws"))
               post-fn     post
               get-fn      get-req
+              stream-handler js/console.log
               }} conf]
     (-> conf
         (assoc :req/login-url login-url)
@@ -136,7 +138,8 @@
         (assoc :req/websocket-url websocket-url)
         (assoc :req/post-fn post-fn)
         (assoc :req/get-fn get-fn)
-        (assoc :url url))))
+        (assoc :url url)
+        (assoc :stream-handler stream-handler))))
 
 (defprotocol Requests
   (login [this params]
@@ -150,7 +153,7 @@
 
 (defprotocol Stream
   (stream [this])
-  (stream-loop [this func])
+  (stream-loop [this])
   (publish-response [this channel resp-chan tap])
   (publish-events [this event-stream]))
 
@@ -165,16 +168,18 @@
   (stream [cmp]
     (if-not (:pub-chan cmp) (throw not-started))
     (:pub-chan cmp))
-  (stream-loop [cmp stream-handler]
+  (stream-loop [cmp]
     ; this lets a function handle the streaming messages, formatted as list,
     ; perfect for re-frame
-    (let [s (stream cmp)]
+    (let [s (stream cmp)
+          handler (:stream-handler conf)]
       (assoc cmp :stream-loop
              (go-loop []
+               ;; revent is a response or event
                (let [revent (a/<! s)
                      body (or (get-in revent [:response :body])
                               (:event revent))]
-                 (stream-handler [(:channel revent)
+                 (handler [(:channel revent)
                         ;; No body is OK sometimes. Logout, for example, only
                         ;; needs a header but the response(event) may be
                         ;; useful, use schema/spec after this point
@@ -262,12 +267,9 @@
                      :client
                      (fn [k r o n] ; n is new value
                        (reset! client-state n)))))
-      (let [stream-handler (get-in cmp [:conf :stream-handler])
-            cmps (if stream-handler
-                   (stream-loop cmp stream-handler)
-                   cmp)]
-        (-> cmps
-            (publish-events msg-ch))))))
+      (-> cmp
+          (publish-events msg-ch)
+          (stream-loop)))))
 
 ;; copied from bones.http/build-system
 (defn build-system [sys conf]
