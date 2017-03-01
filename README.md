@@ -12,13 +12,14 @@ The interface consists of two parts, configuration and a protocol.
 
 ### Configuration
 
-Minimal configuration is required. The `bones.client` will establish a SSE connection
-when the client is started. If the client is not authenticated the
-client will have to be started again upon login. 
+Minimal configuration is required. The `bones.client` will establish a SSE or
+WebSocket connection when the client is started. If the client is not
+authenticated the client will have to be started again upon login.
 
 ```clojure
 (require '[bones.client :as client])
 (def sys (atom {}))
+;; :url is the mount point for the bones.http cqrs endpoint
 (client/build-system sys {:url "/api"})
 (client/start sys)
 (get-in @sys [:client :state]) ;;=> :ok
