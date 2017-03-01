@@ -1,0 +1,7 @@
+language: clojure
+script: lein doo phantom test once
+cache:
+  directories:
+    - $HOME/.m2
+jdk:
+  - oraclejdk8
