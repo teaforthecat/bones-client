@@ -100,8 +100,8 @@
   (testing "response returned on channel"
     (async done
            (let [_ (client/build-system sys {:url "url"
-                                             :es/constructor ok-event-source
-                                             :req/post-fn (fn [url params] (go {:status 200}))})
+                                             :req/post-fn (fn [url params] (go {:status 200}))
+                                             })
                  _ (client/start sys)
                  c (get-in @sys [:client])
                  response (client/stream c)]
@@ -121,7 +121,6 @@
   (testing "response returned on channel"
     (async done
            (let [_ (client/build-system sys {:url "url"
-                                             :es/constructor ok-event-source
                                              :req/get-fn (fn [url params] (go {:status 200}))})
                  _ (client/start sys)
                  c (get-in @sys [:client])
@@ -142,7 +141,6 @@
   (testing "response returned on channel"
     (async done
            (let [_ (client/build-system sys {:url "url"
-                                             :es/constructor ok-event-source
                                              :req/get-fn (fn [url params] (go {:status 200}))})
                  _ (client/start sys)
                  c (get-in @sys [:client])
@@ -162,7 +160,6 @@
   (testing "response returned on channel"
     (async done
            (let [_ (client/build-system sys {:url "url"
-                                             :es/constructor ok-event-source
                                              :req/post-fn (fn [url params] (go {:status 200}))})
                  _ (client/start sys)
                  c (get-in @sys [:client])

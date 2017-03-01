@@ -9,6 +9,10 @@
 (def debug?
   ^boolean js/goog.DEBUG)
 
+(defn log [msg]
+  (when debug?
+    (println msg)))
+
 (when debug?
   (enable-console-print!))
 
@@ -30,20 +34,30 @@
               :headers headers}]
      (http/get url req))))
 
-(defn js-websocket [{:keys [url onmessage onerror onopen]}]
+(defn js-websocket [{:keys [url onmessage onerror onopen on-exception]}]
   ;; react-native wants a string, so, it gets a string
-  (let [src (js/WebSocket. (str url))]
-    (set! (.-onmessage src) onmessage)
-    (set! (.-onerror src) onerror)
-    (set! (.-onopen src) onopen)
-    src))
+  (try
+    (let [src (js/WebSocket. (str url))]
+      (set! (.-onmessage src) onmessage)
+      (set! (.-onerror src) onerror)
+      (set! (.-onopen src) onopen)
+      src)
+    (catch :default e
+      (if (fn? on-exception)
+        (on-exception)
+        (throw e)))))
 
-(defn js-event-source [{:keys [url onmessage onerror onopen]}]
-  (let [src (js/EventSource. url #js{:withCredentials true})]
-    (set! (.-onmessage src) onmessage)
-    (set! (.-onerror src) onerror)
-    (set! (.-onopen src) onopen)
-    src))
+(defn js-event-source [{:keys [url onmessage onerror onopen on-exception]}]
+  (try
+    (let [src (js/EventSource. url #js{:withCredentials true})]
+      (set! (.-onmessage src) onmessage)
+      (set! (.-onerror src) onerror)
+      (set! (.-onopen src) onopen)
+      src)
+    (catch :default e
+      (if (fn? on-exception)
+        (on-exception)
+        (throw e)))))
 
 ;; careful, chrome hides a 401 response so if you see a blankish request/response
 ;; try switching to firefox to see the 401 unauthorized response
@@ -52,17 +66,23 @@
   (start [cmp]
     (if (:src cmp)
       (do
-        (println "already started stream")
+        (log "already started stream")
         cmp)
       (do
         (let [conf (:conf cmp)
               {:keys [:req/events-url :req/websocket-url :es/connection-type
                       :es/onmessage :es/onerror :es/onopen :es/constructor]
-               :or {onmessage (if debug? js/console.log)
+               :or {onmessage log
                     connection-type :event-source
                     constructor (if (= connection-type :websocket)
                                   js-websocket
                                   js-event-source)}} conf
+              client-status (fn [logged-in?] (new js/MessageEvent
+                                                  "client-status"
+                                                  ;; this data acts like a message from SSE or websocket
+                                                  (clj->js {:data (str {:bones/logged-in? logged-in?})})))
+              logged-in #(a/put! msg-ch (client-status true))
+              logged-out #(a/put! msg-ch (client-status false))
               ;; maybe declare websocket instead of infer it
               src (constructor {:url (if (= connection-type :websocket)
                                        websocket-url
@@ -76,23 +96,21 @@
                                            (reset! es-state :disruption)
                                            (if (fn? onerror) (onerror e)))
                                 :onopen  (fn [e]
-                                           (a/put! msg-ch (new js/MessageEvent
-                                                               "client-status"
-                                                               ;; this data acts like a message from SSE or websocket
-                                                               #js{:data (str {:bones/logged-in? true})}))
+                                           (logged-in)
                                            (reset! es-state :ok)
-                                           (if (fn? onopen) (onopen e)))})]
+                                           (if (fn? onopen) (onopen e)))
+                                :on-exception logged-out})]
           (-> cmp
               (assoc :src src))))))
   (stop [cmp]
     (if (:src cmp)
       (do
-        (println "closing stream")
+        (log "closing stream")
         (.close (:src cmp))
         (reset! es-state :done)
         (assoc cmp :src nil))
       (do
-        (println "stream already closed")
+        (log "stream already closed")
         cmp))))
 
 (defn remove-slash [url]
@@ -127,7 +145,7 @@
               websocket-url (add-ws-scheme (add-path url "ws"))
               post-fn     post
               get-fn      get-req
-              stream-handler js/console.log
+              stream-handler log
               }} conf]
     (-> conf
         (assoc :req/login-url login-url)
@@ -202,7 +220,7 @@
                          (map (fn [e] {:channel (keyword (symbol "event" e.type))
                                        :event (read-string e.data)}))
                          msg-ch))
-      (do (println "already publishing events")
+      (do (log "already publishing events")
           cmp)))
 
   Requests
@@ -292,3 +310,9 @@
 
 (defn stop [sys]
   (swap! sys component/stop-system))
+
+;; this is important because attributes of the client need to be cleared to
+;; start again
+(defn restart [sys]
+  (stop sys)
+  (start sys))
