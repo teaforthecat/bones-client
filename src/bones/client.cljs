@@ -11,7 +11,7 @@
 
 (defn log [msg]
   (when debug?
-    (println msg)))
+    (.log js/console msg)))
 
 (when debug?
   (enable-console-print!))
@@ -126,6 +126,22 @@
   (let [scheme (if (= (.getScheme url) "https") "wss" "ws")]
     (.setScheme (.clone url) scheme)))
 
+(defn add-host [url host]
+  (let [host (if host host (.. js/window location host))]
+    (.setDomain (.clone url) host)))
+
+;; websockets require a fqdn
+(defn conform-ws-url [url]
+  (let [host (if (empty? (.getDomain url))
+               (try (..  js/window location host)
+                    ;; there may not be a window (in node, e.g.)
+                    (catch :default e  "no-domain-found"))
+                    (.getDomain url))]
+    (-> url
+        (add-path "ws")
+        (add-host host)
+        (add-ws-scheme))))
+
 (defn conform [conf]
   (let [url (goog.Uri.parse (get conf :url "/api"))
         {:keys [:req/login-url
@@ -142,7 +158,7 @@
               command-url (add-path url "command")
               query-url   (add-path url "query")
               events-url  (add-path url "events")
-              websocket-url (add-ws-scheme (add-path url "ws"))
+              websocket-url (conform-ws-url url)
               post-fn     post
               get-fn      get-req
               stream-handler log

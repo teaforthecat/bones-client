@@ -91,10 +91,18 @@
 
 (deftest url-resolving
   (testing "merging defaults"
-    (let []
-      (is (= "/api/login" (-> (client/conform {})
-                              :req/login-url
-                              .toString))))))
+    (is (= "/api/login" (-> (client/conform {})
+                            :req/login-url
+                            (.toString)))))
+  (testing "websocket conformance"
+    (is (= "ws://xyz.com/abc/ws"
+           (-> (client/conform {:url "http://xyz.com/abc"})
+               :req/websocket-url
+               .toString)))
+    (is (= "ws://no-domain-found/api/ws"
+           (-> (client/conform {})
+               :req/websocket-url
+               .toString)))))
 
 (deftest login
   (testing "response returned on channel"
