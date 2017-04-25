@@ -133,10 +133,14 @@
 ;; websockets require a fqdn
 (defn conform-ws-url [url]
   (let [host (if (empty? (.getDomain url))
-               (try (..  js/window location host)
+               (try
+                 (let [host (..  js/window -location -host)]
+                   (if (empty? host)
+                     (throw "no-domain-found")
+                     host))
                     ;; there may not be a window (in node, e.g.)
                     (catch :default e  "no-domain-found"))
-                    (.getDomain url))]
+               (.getDomain url))]
     (-> url
         (add-path "ws")
         (add-host host)
