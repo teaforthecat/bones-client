@@ -202,6 +202,24 @@
   {"authorization" (str "Token " token)})
 
 (defrecord Client [conf event-source pub-chan client-state]
+  component/Lifecycle
+  (start [cmp]
+    (if-not (:event-source cmp) (throw "event-source missing from Client"))
+    (let [{{:keys [:es-state :msg-ch]} :event-source} cmp]
+      ;; When the state of the event source changes, it will be propagated here.
+      ;; This way the user can be concerned with only the client, instead of the
+      ;; client and the event source.
+      (if es-state
+        (do
+          ;; in case multiple watchers(?)
+          (remove-watch es-state :client)
+          (add-watch es-state
+                     :client
+                     (fn [k r o n] ; n is new value
+                       (reset! client-state n)))))
+      (-> cmp
+          (publish-events msg-ch)
+          (stream-loop))))
   Stream
   (stream [cmp]
     (if-not (:pub-chan cmp) (throw not-started))
@@ -288,26 +306,7 @@
                         :response/command
                         (post-fn command-url params headers)
                         tap)
-      cmp))
-
-  component/Lifecycle
-  (start [cmp]
-    (if-not (:event-source cmp) (throw "event-source missing from Client"))
-    (let [{{:keys [:es-state :msg-ch]} :event-source} cmp]
-      ;; When the state of the event source changes, it will be propagated here.
-      ;; This way the user can be concerned with only the client, instead of the
-      ;; client and the event source.
-      (if es-state
-        (do
-          ;; in case multiple watchers(?)
-          (remove-watch es-state :client)
-          (add-watch es-state
-                     :client
-                     (fn [k r o n] ; n is new value
-                       (reset! client-state n)))))
-      (-> cmp
-          (publish-events msg-ch)
-          (stream-loop)))))
+      cmp)))
 
 ;; copied from bones.http/build-system
 (defn build-system [sys conf]

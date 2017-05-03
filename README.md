@@ -16,13 +16,22 @@ Minimal configuration is required. The `bones.client` will establish a SSE or
 WebSocket connection when the client is started. If the client is not
 authenticated the client will have to be started again upon login.
 
+For configuration, the client takes a `:url` and a `:stream-handler`. The `:url`
+is the mount point for the bones.http cqrs endpoint. The `:stream-handler` is a
+function that receives both responses and server sent events in vector form,
+which is designed to work with re-frame's dispatch
+function. [bones.editable](https://github.com/teaforthecat/bones-editable) does
+this automatically and provides a multi-method as an api to route the responses
+and events.
+
+
 ```clojure
 (require '[bones.client :as client])
 (def sys (atom {}))
-;; :url is the mount point for the bones.http cqrs endpoint
-(client/build-system sys {:url "/api"})
+(client/build-system sys {:url "/api"
+                          :stream-handler re-frame/dispatch})
 (client/start sys)
-(get-in @sys [:client :state]) ;;=> :ok
+(get-in @sys [:client :state]) ;;=> :ok (logged in)
 ```
 
 
@@ -60,7 +69,7 @@ Then the stream would emit:
 ;; => {:channel :event/message :event {:what "whopper"}}
 ```
 
-_named events not yet supported_
+
 
 ## Development
 
