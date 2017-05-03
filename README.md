@@ -4,6 +4,8 @@ A Clojurescript library designed to make http requests to a CQRS and SSE server
 (like [bones.http](https://github.com/teaforthecat/bones-http)).
 All responses and events are put onto a single core.async channel. 
 
+Part of the [bones framework](https://github.com/teaforthecat/bones)
+
 [![Build Status](https://travis-ci.org/teaforthecat/bones-client.svg?branch=master)](https://travis-ci.org/teaforthecat/bones-client)
 
 ## Overview
@@ -68,7 +70,6 @@ Then the stream would emit:
 (client/stream (:client @sys)) ;; returns a core.async/chan
 ;; => {:channel :event/message :event {:what "whopper"}}
 ```
-
 
 
 ## Development
