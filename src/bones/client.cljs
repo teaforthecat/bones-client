@@ -16,14 +16,16 @@
 (when debug?
   (enable-console-print!))
 
+(def accept-header {"Accept" "application/edn"})
+
 ;; returns a channel
 (defn post
   ([url params]
    (post url params {}))
   ([url params headers]
    (let [req {:edn-params params
-              :headers headers}]
-     (http/post url req))))
+              :headers (merge accept-header headers)}]
+     (http/post url req)))
 
 ;; returns a channel
 (defn get-req
@@ -31,7 +33,7 @@
    (get-req url params {}))
   ([url params headers]
    (let [req {:query-params params
-              :headers headers}]
+              :headers (merge accept-header headers)}]
      (http/get url req))))
 
 (defn js-websocket [{:keys [url onmessage onerror onopen on-exception]}]
@@ -256,6 +258,8 @@
              (a/pipeline 1
                          pub-chan
                          (map (fn [e] {:channel (keyword (symbol "event" e.type))
+                                       ;; NOTE we have to be sure that we have edn
+                                       ;; coming over the wire somehow
                                        :event (read-string e.data)}))
                          msg-ch))
       (do (log "already publishing events")
