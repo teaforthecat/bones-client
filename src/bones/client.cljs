@@ -25,7 +25,7 @@
   ([url params headers]
    (let [req {:edn-params params
               :headers (merge accept-header headers)}]
-     (http/post url req)))
+     (http/post url req))))
 
 ;; returns a channel
 (defn get-req
